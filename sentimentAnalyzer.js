@@ -1,9 +1,9 @@
 /**
  * SentimentAnalyzer
  *
- * Uses an OpenAI-compatible chat API (default: OpenRouter + open-source Llama) to:
+ * Uses an OpenAI-compatible chat API (default: OpenRouter + two OSS Llama models) to:
  *  1. Score each article's sentiment per coin (-1 to +1)
- *  2. Aggregate scores across all articles
+ *  2. Average scores from two models for reliability
  *  3. Return a ranked list of trade opportunities
  */
 
@@ -13,11 +13,17 @@ import { SUPPORTED_COINS } from './newsFetcher.js';
 const BATCH_SIZE = 15; // articles per LLM call to stay within context
 
 export class SentimentAnalyzer {
-  constructor({ apiKey, baseUrl = 'https://openrouter.ai/api/v1', model = 'meta-llama/llama-3.1-8b-instruct' }) {
+  constructor({
+    apiKey,
+    baseUrl = 'https://openrouter.ai/api/v1',
+    primaryModel = 'meta-llama/llama-3.1-8b-instruct',
+    secondaryModel = 'mistralai/mistral-7b-instruct',
+  }) {
     if (!apiKey) throw new Error('LLM_API_KEY is required');
     this.apiKey = apiKey;
     this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.model = model;
+    this.primaryModel = primaryModel;
+    this.secondaryModel = secondaryModel;
   }
 
   /**
@@ -96,11 +102,20 @@ Respond ONLY with valid JSON array, no other text:
 
 If no coins have meaningful signals, return: []`;
 
+    const [primaryScores, secondaryScores] = await Promise.all([
+      this._analyzeWithModel(prompt, this.primaryModel),
+      this._analyzeWithModel(prompt, this.secondaryModel),
+    ]);
+
+    return this._mergeModelScores(primaryScores, secondaryScores);
+  }
+
+  async _analyzeWithModel(prompt, model) {
     try {
       const { data } = await axios.post(
         `${this.baseUrl}/chat/completions`,
         {
-          model: this.model,
+          model,
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 1000,
           temperature: 0.2,
@@ -128,8 +143,40 @@ If no coins have meaningful signals, return: []`;
           reasoning: String(r.reasoning || '').slice(0, 100),
         }));
     } catch (err) {
-      console.error('[Sentiment] LLM parse error:', err.response?.data?.error?.message || err.message);
+      console.error(`[Sentiment] ${model} parse error:`, err.response?.data?.error?.message || err.message);
       return [];
     }
+  }
+
+  _mergeModelScores(primaryScores, secondaryScores) {
+    const merged = new Map();
+    const all = [
+      ...primaryScores.map(s => ({ ...s, sourceModel: this.primaryModel })),
+      ...secondaryScores.map(s => ({ ...s, sourceModel: this.secondaryModel })),
+    ];
+
+    for (const item of all) {
+      if (!merged.has(item.coin)) {
+        merged.set(item.coin, {
+          coin: item.coin,
+          scoreTotal: 0,
+          confidenceTotal: 0,
+          count: 0,
+          reasons: [],
+        });
+      }
+      const entry = merged.get(item.coin);
+      entry.scoreTotal += item.score;
+      entry.confidenceTotal += item.confidence;
+      entry.count += 1;
+      entry.reasons.push(`${item.sourceModel}: ${item.reasoning}`);
+    }
+
+    return [...merged.values()].map(entry => ({
+      coin: entry.coin,
+      score: entry.scoreTotal / entry.count,
+      confidence: entry.confidenceTotal / entry.count,
+      reasoning: entry.reasons.slice(0, 2).join(' | '),
+    }));
   }
 }

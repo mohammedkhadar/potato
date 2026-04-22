@@ -3,7 +3,7 @@
  *
  * Execution flow:
  *  1. Fetch news from CoinDesk, CoinTelegraph, and Reddit
- *  2. Analyse sentiment with an LLM (default: OpenRouter + open-source Llama)
+ *  2. Analyse sentiment with two OSS LLMs and average scores
  *  3. Exit any positions that hit take-profit / stop-loss / 15-min expiry
  *  4. Enter new positions on strong bullish signals
  *
@@ -42,7 +42,8 @@ async function main() {
   const analyzer = new SentimentAnalyzer({
     apiKey: process.env.LLM_API_KEY,
     baseUrl: process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1',
-    model: process.env.LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct',
+    primaryModel: process.env.LLM_MODEL_PRIMARY || process.env.LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct',
+    secondaryModel: process.env.LLM_MODEL_SECONDARY || 'mistralai/mistral-7b-instruct',
   });
 
   const engine = new TradeEngine({ broker });

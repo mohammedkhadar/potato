@@ -1,6 +1,6 @@
 # Crypto News Trading Bot
 
-A news-driven crypto trading bot that runs as a **GitHub Actions workflow** every 5 minutes. It fetches breaking crypto news, analyses sentiment with an LLM (default: OpenRouter + open-source Llama), and executes short-term profit-taking trades within a 15-minute window.
+A news-driven crypto trading bot that runs as a **GitHub Actions workflow** every 5 minutes. It fetches breaking crypto news, analyses sentiment with two OSS LLMs via OpenRouter (averaged for reliability), and executes short-term profit-taking trades within a 15-minute window.
 
 ---
 
@@ -17,8 +17,8 @@ GitHub Actions (every 5 min)
   └── Reddit r/Bitcoin  (BTC-focused signals)
         │
         ▼
-  SentimentAnalyzer (OpenRouter / open-source Llama)
-  └── Scores each coin -1.0 to +1.0 with confidence
+  SentimentAnalyzer (OpenRouter / 2x OSS models)
+  └── Averages each coin score (-1.0 to +1.0) for reliability
         │
         ▼
   TradeEngine
@@ -67,7 +67,9 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 Optional repository variables:
 
 - `LLM_BASE_URL` (default: `https://openrouter.ai/api/v1`)
-- `LLM_MODEL` (default: `meta-llama/llama-3.1-8b-instruct`)
+- `LLM_MODEL_PRIMARY` (default: `meta-llama/llama-3.1-8b-instruct`)
+- `LLM_MODEL_SECONDARY` (default: `mistralai/mistral-7b-instruct`)
+- `LLM_MODEL` (legacy fallback for primary model)
 
 ### 3. Enable the workflow
 

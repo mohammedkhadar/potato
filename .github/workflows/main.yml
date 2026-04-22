@@ -57,7 +57,8 @@ jobs:
           ALPACA_API_SECRET:   ${{ secrets.ALPACA_API_SECRET }}
           LLM_API_KEY:         ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL:        ${{ vars.LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
-          LLM_MODEL:           ${{ vars.LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct' }}
+          LLM_MODEL_PRIMARY:   ${{ vars.LLM_MODEL_PRIMARY || vars.LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct' }}
+          LLM_MODEL_SECONDARY: ${{ vars.LLM_MODEL_SECONDARY || 'mistralai/mistral-7b-instruct' }}
           # Default to paper trading unless explicitly disabled
           PAPER_TRADING: ${{ github.event.inputs.paper_trading || 'true' }}
         run: node index.js
