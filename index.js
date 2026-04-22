@@ -10,10 +10,10 @@
  * Runs as a GitHub Actions workflow on a schedule.
  */
 
-import { NewsFetcher }       from './src/newsFetcher.js';
-import { SentimentAnalyzer } from './src/sentimentAnalyzer.js';
-import { TradeEngine }       from './src/tradeEngine.js';
-import { AlpacaBroker }      from './src/broker.js';
+import { NewsFetcher }       from './newsFetcher.js';
+import { SentimentAnalyzer } from './sentimentAnalyzer.js';
+import { TradeEngine }       from './tradeEngine.js';
+import { AlpacaBroker }      from './broker.js';
 
 async function main() {
   const startTime = Date.now();
