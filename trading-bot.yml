@@ -1,0 +1,70 @@
+name: Crypto Trading Bot
+
+on:
+  # Run every 5 minutes — tight enough to catch 15-min windows
+  schedule:
+    - cron: '*/5 * * * *'
+
+  # Allow manual trigger with option to use live trading
+  workflow_dispatch:
+    inputs:
+      paper_trading:
+        description: 'Paper trading mode (true = safe simulation)'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+concurrency:
+  # Prevent overlapping runs — only one bot at a time
+  group: crypto-bot
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    name: Run Trading Bot
+    runs-on: ubuntu-latest
+    timeout-minutes: 4   # must finish before next 5-min run starts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Restore position state from cache so the bot remembers open trades
+      # across runs (GitHub Actions runners are stateless)
+      - name: Restore state cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/bot_state.json
+          key: bot-state-${{ github.run_id }}
+          restore-keys: |
+            bot-state-
+
+      - name: Run trading bot
+        env:
+          ALPACA_API_KEY:      ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET:   ${{ secrets.ALPACA_API_SECRET }}
+          ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+          CRYPTOPANIC_API_KEY: ${{ secrets.CRYPTOPANIC_API_KEY }}
+          # Default to paper trading unless explicitly disabled
+          PAPER_TRADING: ${{ github.event.inputs.paper_trading || 'true' }}
+        run: node index.js
+
+      # Save updated state for next run
+      - name: Save state cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: /tmp/bot_state.json
+          key: bot-state-${{ github.run_id }}
