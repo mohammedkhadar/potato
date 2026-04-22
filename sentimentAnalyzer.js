@@ -1,7 +1,7 @@
 /**
  * SentimentAnalyzer
  *
- * Uses an OpenAI-compatible chat API (default: OpenRouter + two OSS Llama models) to:
+ * Uses an OpenAI-compatible chat API (default: OpenRouter + two OSS models) to:
  *  1. Score each article's sentiment per coin (-1 to +1)
  *  2. Average scores from two models for reliability
  *  3. Return a ranked list of trade opportunities
@@ -17,7 +17,7 @@ export class SentimentAnalyzer {
     apiKey,
     baseUrl = 'https://openrouter.ai/api/v1',
     primaryModel = 'meta-llama/llama-3.1-8b-instruct',
-    secondaryModel = 'mistralai/mistral-7b-instruct',
+    secondaryModel = 'qwen/qwen-2.5-7b-instruct',
   }) {
     if (!apiKey) throw new Error('LLM_API_KEY is required');
     this.apiKey = apiKey;

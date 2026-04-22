@@ -43,7 +43,7 @@ async function main() {
     apiKey: process.env.LLM_API_KEY,
     baseUrl: process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1',
     primaryModel: process.env.LLM_MODEL_PRIMARY || process.env.LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct',
-    secondaryModel: process.env.LLM_MODEL_SECONDARY || 'mistralai/mistral-7b-instruct',
+    secondaryModel: process.env.LLM_MODEL_SECONDARY || 'qwen/qwen-2.5-7b-instruct',
   });
 
   const engine = new TradeEngine({ broker });

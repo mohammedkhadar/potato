@@ -68,7 +68,7 @@ Optional repository variables:
 
 - `LLM_BASE_URL` (default: `https://openrouter.ai/api/v1`)
 - `LLM_MODEL_PRIMARY` (default: `meta-llama/llama-3.1-8b-instruct`)
-- `LLM_MODEL_SECONDARY` (default: `mistralai/mistral-7b-instruct`)
+- `LLM_MODEL_SECONDARY` (default: `qwen/qwen-2.5-7b-instruct`)
 - `LLM_MODEL` (legacy fallback for primary model)
 
 ### 3. Enable the workflow
