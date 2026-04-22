@@ -2,11 +2,10 @@
  * NewsFetcher
  *
  * Sources chosen for coverage + free/public access:
- *  1. CryptoPanic API  — crypto-native aggregator, voted headlines, free tier
- *  2. CoinDesk RSS     — authoritative crypto journalism, no auth needed
- *  3. CoinTelegraph RSS— second major outlet, no auth needed
- *  4. Reddit r/CryptoCurrency — community sentiment, public JSON API
- *  5. Reddit r/Bitcoin        — BTC-focused community signal
+ *  1. CoinDesk RSS     — authoritative crypto journalism, no auth needed
+ *  2. CoinTelegraph RSS— second major outlet, no auth needed
+ *  3. Reddit r/CryptoCurrency — community sentiment, public JSON API
+ *  4. Reddit r/Bitcoin        — BTC-focused community signal
  */
 
 import axios from 'axios';
@@ -34,13 +33,8 @@ export const SUPPORTED_COINS = [
 ];
 
 export class NewsFetcher {
-  constructor({ cryptoPanicKey } = {}) {
-    this.cryptoPanicKey = cryptoPanicKey; // optional – falls back to public feed
-  }
-
   async fetchAll() {
     const results = await Promise.allSettled([
-      this._fetchCryptoPanic(),
       ...RSS_SOURCES.map(s => this._fetchRSS(s)),
       ...REDDIT_SOURCES.map(s => this._fetchReddit(s)),
     ]);
@@ -62,29 +56,6 @@ export class NewsFetcher {
 
     console.log(`[NewsFetcher] Fetched ${unique.length} unique articles`);
     return unique;
-  }
-
-  // ── CryptoPanic ──────────────────────────────────────────────────────────────
-  async _fetchCryptoPanic() {
-    const base = 'https://cryptopanic.com/api/v1/posts/';
-    const params = {
-      auth_token: this.cryptoPanicKey || 'public',  // public token works for basic feed
-      public: true,
-      kind: 'news',
-      filter: 'hot',
-    };
-    const qs = new URLSearchParams(params).toString();
-    const { data } = await axios.get(`${base}?${qs}`, { timeout: 10000 });
-
-    return (data.results || []).slice(0, 30).map(item => ({
-      source: 'cryptopanic',
-      title: item.title,
-      body: item.title, // summary only in free tier
-      url: item.url,
-      publishedAt: item.published_at,
-      coins: (item.currencies || []).map(c => c.code.toUpperCase()),
-      votes: item.votes,
-    }));
   }
 
   // ── RSS feeds ─────────────────────────────────────────────────────────────────

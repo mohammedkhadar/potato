@@ -1,6 +1,6 @@
 # Crypto News Trading Bot
 
-A news-driven crypto trading bot that runs as a **GitHub Actions workflow** every 5 minutes. It fetches breaking crypto news, analyses sentiment with Claude AI, and executes short-term profit-taking trades within a 15-minute window.
+A news-driven crypto trading bot that runs as a **GitHub Actions workflow** every 5 minutes. It fetches breaking crypto news, analyses sentiment with an LLM (default: OpenRouter + open-source Llama), and executes short-term profit-taking trades within a 15-minute window.
 
 ---
 
@@ -11,14 +11,13 @@ GitHub Actions (every 5 min)
         │
         ▼
   NewsFetcher
-  ├── CryptoPanic API   (crypto-native aggregator, voted headlines)
   ├── CoinDesk RSS      (authoritative crypto journalism)
   ├── CoinTelegraph RSS (major crypto outlet)
   ├── Reddit r/CryptoCurrency (community sentiment)
   └── Reddit r/Bitcoin  (BTC-focused signals)
         │
         ▼
-  SentimentAnalyzer (Claude claude-sonnet-4-20250514)
+  SentimentAnalyzer (OpenRouter / open-source Llama)
   └── Scores each coin -1.0 to +1.0 with confidence
         │
         ▼
@@ -63,8 +62,12 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 |--------|----------------|
 | `ALPACA_API_KEY` | [alpaca.markets](https://alpaca.markets) → API Keys |
 | `ALPACA_API_SECRET` | Same page |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
-| `CRYPTOPANIC_API_KEY` | [cryptopanic.com/developers/api](https://cryptopanic.com/developers/api) *(optional, free tier available)* |
+| `LLM_API_KEY` | OpenRouter API key |
+
+Optional repository variables:
+
+- `LLM_BASE_URL` (default: `https://openrouter.ai/api/v1`)
+- `LLM_MODEL` (default: `meta-llama/llama-3.1-8b-instruct`)
 
 ### 3. Enable the workflow
 
@@ -89,7 +92,7 @@ To trigger manually: **Actions → Crypto Trading Bot → Run workflow**
 1. **Take profit** — unrealised P&L ≥ +1.5%
 2. **Stop loss** — unrealised P&L ≤ -0.8%
 3. **15-min expiry** — position older than 15 minutes
-4. **Sentiment flip** — Claude scores the coin < -0.3
+4. **Sentiment flip** — LLM scores the coin < -0.3
 
 ---
 

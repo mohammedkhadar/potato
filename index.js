@@ -2,8 +2,8 @@
  * Crypto News Trading Bot — Main Entry Point
  *
  * Execution flow:
- *  1. Fetch news from CryptoPanic, CoinDesk, CoinTelegraph, Reddit
- *  2. Analyse sentiment with Claude AI
+ *  1. Fetch news from CoinDesk, CoinTelegraph, and Reddit
+ *  2. Analyse sentiment with an LLM (default: OpenRouter + open-source Llama)
  *  3. Exit any positions that hit take-profit / stop-loss / 15-min expiry
  *  4. Enter new positions on strong bullish signals
  *
@@ -23,7 +23,7 @@ async function main() {
   console.log('═══════════════════════════════════════════════════');
 
   // ── Validate env ─────────────────────────────────────────────────────────────
-  const required = ['ALPACA_API_KEY', 'ALPACA_API_SECRET', 'ANTHROPIC_API_KEY'];
+  const required = ['ALPACA_API_KEY', 'ALPACA_API_SECRET', 'LLM_API_KEY'];
   const missing  = required.filter(k => !process.env[k]);
   if (missing.length > 0) {
     console.error('Missing required env vars:', missing.join(', '));
@@ -37,12 +37,12 @@ async function main() {
     paper:     process.env.PAPER_TRADING !== 'false',  // default: paper mode
   });
 
-  const newsFetcher = new NewsFetcher({
-    cryptoPanicKey: process.env.CRYPTOPANIC_API_KEY,   // optional but recommended
-  });
+  const newsFetcher = new NewsFetcher();
 
   const analyzer = new SentimentAnalyzer({
-    anthropicKey: process.env.ANTHROPIC_API_KEY,
+    apiKey: process.env.LLM_API_KEY,
+    baseUrl: process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1',
+    model: process.env.LLM_MODEL || 'meta-llama/llama-3.1-8b-instruct',
   });
 
   const engine = new TradeEngine({ broker });
@@ -70,7 +70,7 @@ async function main() {
   console.log(`[Bot] ${recentArticles.length}/${articles.length} articles published in last 30 min`);
 
   // ── Step 2: Sentiment analysis ────────────────────────────────────────────────
-  console.log('\n[Bot] Step 2/3 — Analysing sentiment with Claude AI...');
+  console.log('\n[Bot] Step 2/3 — Analysing sentiment with LLM...');
   let sentiment;
   try {
     sentiment = await analyzer.analyze(recentArticles.length > 0 ? recentArticles : articles);

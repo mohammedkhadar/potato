@@ -1,21 +1,23 @@
 /**
  * SentimentAnalyzer
  *
- * Uses Claude to:
+ * Uses an OpenAI-compatible chat API (default: OpenRouter + open-source Llama) to:
  *  1. Score each article's sentiment per coin (-1 to +1)
  *  2. Aggregate scores across all articles
  *  3. Return a ranked list of trade opportunities
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import axios from 'axios';
 import { SUPPORTED_COINS } from './newsFetcher.js';
 
-const BATCH_SIZE = 15; // articles per Claude call to stay within context
+const BATCH_SIZE = 15; // articles per LLM call to stay within context
 
 export class SentimentAnalyzer {
-  constructor({ anthropicKey }) {
-    if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY is required');
-    this.client = new Anthropic({ apiKey: anthropicKey });
+  constructor({ apiKey, baseUrl = 'https://openrouter.ai/api/v1', model = 'meta-llama/llama-3.1-8b-instruct' }) {
+    if (!apiKey) throw new Error('LLM_API_KEY is required');
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.model = model;
   }
 
   /**
@@ -95,13 +97,24 @@ Respond ONLY with valid JSON array, no other text:
 If no coins have meaningful signals, return: []`;
 
     try {
-      const message = await this.client.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const raw = message.content[0].text.trim();
+      const { data } = await axios.post(
+        `${this.baseUrl}/chat/completions`,
+        {
+          model: this.model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1000,
+          temperature: 0.2,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        }
+      );
+      const raw = data?.choices?.[0]?.message?.content?.trim();
+      if (!raw) return [];
       const cleaned = raw.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -115,7 +128,7 @@ If no coins have meaningful signals, return: []`;
           reasoning: String(r.reasoning || '').slice(0, 100),
         }));
     } catch (err) {
-      console.error('[Sentiment] Claude parse error:', err.message);
+      console.error('[Sentiment] LLM parse error:', err.response?.data?.error?.message || err.message);
       return [];
     }
   }
