@@ -11,6 +11,7 @@ import axios from 'axios';
 import { SUPPORTED_COINS } from './newsFetcher.js';
 
 const BATCH_SIZE = 15; // articles per LLM call to stay within context
+const MIN_MERGED_CONFIDENCE = 0.65;
 
 export class SentimentAnalyzer {
   constructor({
@@ -110,41 +111,20 @@ If no coins have meaningful signals, return: []`;
     return this._mergeModelScores(primaryScores, secondaryScores);
   }
 
-  async _analyzeWithModel(prompt, model) {
+  async _analyzeWithModel(prompt, model, attemptedModels = new Set()) {
+    attemptedModels.add(model);
+    const fallbackModel = this._getFallbackModel(model);
     try {
-      const { data } = await axios.post(
-        `${this.baseUrl}/chat/completions`,
-        {
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 1000,
-          temperature: 0.2,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000,
-        }
-      );
-      const raw = data?.choices?.[0]?.message?.content?.trim();
-      if (!raw) return [];
-      const cleaned = raw.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-
-      // Validate and sanitize
-      return parsed
-        .filter(r => SUPPORTED_COINS.includes(r.coin))
-        .map(r => ({
-          coin: r.coin,
-          score: Math.max(-1, Math.min(1, Number(r.score) || 0)),
-          confidence: Math.max(0.1, Math.min(1, Number(r.confidence) || 0.5)),
-          reasoning: String(r.reasoning || '').slice(0, 100),
-        }));
+      return await this._requestAndParse(prompt, model);
     } catch (err) {
       console.error(`[Sentiment] ${model} parse error:`, err.response?.data?.error?.message || err.message);
-      return [];
+      if (!fallbackModel || attemptedModels.has(fallbackModel)) return [];
+      console.warn(`[Sentiment] Falling back from ${model} to ${fallbackModel}`);
+      try {
+        return await this._analyzeWithModel(prompt, fallbackModel, attemptedModels);
+      } catch {
+        return [];
+      }
     }
   }
 
@@ -152,23 +132,91 @@ If no coins have meaningful signals, return: []`;
     const primaryByCoin = new Map(primaryScores.map(s => [s.coin, s]));
     const secondaryByCoin = new Map(secondaryScores.map(s => [s.coin, s]));
     const merged = [];
+    let missingSecond = 0;
+    let signMismatch = 0;
+    let lowConfidence = 0;
 
     for (const [coin, primary] of primaryByCoin.entries()) {
       const secondary = secondaryByCoin.get(coin);
-      if (!secondary) continue;
+      if (!secondary) {
+        missingSecond++;
+        continue;
+      }
 
       const primarySign = Math.sign(primary.score);
       const secondarySign = Math.sign(secondary.score);
-      if (primarySign === 0 || secondarySign === 0 || primarySign !== secondarySign) continue;
+      if (primarySign === 0 || secondarySign === 0 || primarySign !== secondarySign) {
+        signMismatch++;
+        continue;
+      }
+
+      const mergedConfidence = (primary.confidence + secondary.confidence) / 2;
+      if (mergedConfidence < MIN_MERGED_CONFIDENCE) {
+        lowConfidence++;
+        continue;
+      }
 
       merged.push({
         coin,
         score: (primary.score + secondary.score) / 2,
-        confidence: (primary.confidence + secondary.confidence) / 2,
+        confidence: mergedConfidence,
         reasoning: `${this.primaryModel}: ${primary.reasoning} | ${this.secondaryModel}: ${secondary.reasoning}`,
       });
     }
 
+    console.log(
+      `[Sentiment] Agreement stats: accepted=${merged.length} missing_second=${missingSecond} sign_mismatch=${signMismatch} low_conf=${lowConfidence}`
+    );
+
     return merged;
+  }
+
+  async _requestAndParse(prompt, model) {
+    const { data } = await axios.post(
+      `${this.baseUrl}/chat/completions`,
+      {
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1000,
+        temperature: 0.2,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+
+    const raw = data?.choices?.[0]?.message?.content?.trim();
+    if (!raw) return [];
+
+    const parsed = this._parseModelJson(raw);
+    return parsed
+      .filter(r => SUPPORTED_COINS.includes(r.coin))
+      .map(r => ({
+        coin: r.coin,
+        score: Math.max(-1, Math.min(1, Number(r.score) || 0)),
+        confidence: Math.max(0.1, Math.min(1, Number(r.confidence) || 0.5)),
+        reasoning: String(r.reasoning || '').slice(0, 100),
+      }));
+  }
+
+  _parseModelJson(rawText) {
+    const cleaned = rawText.replace(/```json|```/g, '').trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      const match = cleaned.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error('No JSON array found in model output');
+      return JSON.parse(match[0]);
+    }
+  }
+
+  _getFallbackModel(model) {
+    if (model === this.primaryModel) return this.secondaryModel;
+    if (model === this.secondaryModel) return this.primaryModel;
+    return null;
   }
 }

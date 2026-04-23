@@ -74,8 +74,11 @@ export class NewsFetcher {
       return true;
     });
 
-    console.log(`[NewsFetcher] Fetched ${unique.length} unique articles`);
-    return unique;
+    const coinRelevant = unique.filter(a => Array.isArray(a.coins) && a.coins.length > 0);
+    console.log(
+      `[NewsFetcher] Fetched ${unique.length} unique articles, ${coinRelevant.length} mention supported coins`
+    );
+    return coinRelevant;
   }
 
   // ── RSS feeds ─────────────────────────────────────────────────────────────────
