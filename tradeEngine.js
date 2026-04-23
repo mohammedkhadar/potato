@@ -154,7 +154,10 @@ export class TradeEngine {
       console.log(`[Engine]   Reason: ${opp.reasoning}`);
 
       try {
-        await this.broker.buy(opp.coin, positionUsd);
+        await this.broker.buy(opp.coin, positionUsd, {
+          takeProfitPct: CONFIG.TAKE_PROFIT_PCT,
+          stopLossPct: CONFIG.STOP_LOSS_PCT,
+        });
         this.state.entries[opp.coin] = {
           timestamp: Date.now(),
           score: opp.score,

@@ -10,7 +10,7 @@
 import axios from 'axios';
 import { SUPPORTED_COINS } from './newsFetcher.js';
 
-const BATCH_SIZE = 15; // articles per LLM call to stay within context
+const BATCH_SIZE = 12; // articles per coin batch per LLM call
 const MIN_MERGED_CONFIDENCE = 0.65;
 
 export class SentimentAnalyzer {
@@ -34,23 +34,23 @@ export class SentimentAnalyzer {
   async analyze(articles) {
     if (articles.length === 0) return [];
 
-    // Split into batches to avoid context limits
-    const batches = [];
-    for (let i = 0; i < articles.length; i += BATCH_SIZE) {
-      batches.push(articles.slice(i, i + BATCH_SIZE));
-    }
+    // Build coin-specific batches so each model call focuses on one coin.
+    const coinBatches = this._buildCoinBatches(articles);
+    if (coinBatches.length === 0) return [];
 
     const allScores = {}; // coin -> { total, count, reasons }
+    let acceptedBatches = 0;
 
-    for (const batch of batches) {
-      const batchScores = await this._analyzeBatch(batch);
-      for (const { coin, score, confidence, reasoning } of batchScores) {
-        if (!allScores[coin]) allScores[coin] = { total: 0, weightedTotal: 0, count: 0, reasons: [] };
-        allScores[coin].total += score;
-        allScores[coin].weightedTotal += score * confidence;
-        allScores[coin].count++;
-        allScores[coin].reasons.push(reasoning);
-      }
+    for (const { coin, articles: batchArticles } of coinBatches) {
+      const merged = await this._analyzeCoinBatch(coin, batchArticles);
+      if (!merged) continue;
+
+      acceptedBatches++;
+      if (!allScores[coin]) allScores[coin] = { total: 0, weightedTotal: 0, count: 0, reasons: [] };
+      allScores[coin].total += merged.score;
+      allScores[coin].weightedTotal += merged.score * merged.confidence;
+      allScores[coin].count++;
+      allScores[coin].reasons.push(merged.reasoning);
     }
 
     // Build ranked result
@@ -66,21 +66,22 @@ export class SentimentAnalyzer {
       .filter(r => Math.abs(r.score) > 0.1)           // ignore noise
       .sort((a, b) => b.score - a.score);             // highest positive first
 
+    console.log(`[Sentiment] Coin-batch agreement: accepted_batches=${acceptedBatches}/${coinBatches.length}`);
     console.log(`[Sentiment] Scored ${results.length} coins from ${articles.length} articles`);
     return results;
   }
 
-  async _analyzeBatch(articles) {
+  async _analyzeCoinBatch(targetCoin, articles) {
     const articlesText = articles.map((a, i) =>
       `[${i + 1}] SOURCE:${a.source} | ${a.title}\n${a.body || ''}`
     ).join('\n\n');
 
-    const prompt = `You are a crypto trading sentiment analyst. Analyze the following ${articles.length} news articles/posts and return sentiment scores.
+    const prompt = `You are a crypto trading sentiment analyst. Analyze the following ${articles.length} news articles/posts and return a sentiment score for ONE target coin.
 
-SUPPORTED COINS: ${SUPPORTED_COINS.join(', ')}
+TARGET COIN: ${targetCoin}
 
-For each coin that is meaningfully referenced in the articles, provide:
-- A sentiment SCORE from -1.0 (very bearish) to +1.0 (very bullish)
+For the target coin only, provide:
+- A sentiment SCORE from -1.0 (very bearish) to +1.0 (very bullish), based only on evidence relevant to ${targetCoin}
 - A CONFIDENCE from 0.1 to 1.0 based on how clear and credible the signal is
 - Brief REASONING (max 20 words)
 
@@ -97,18 +98,17 @@ ${articlesText}
 
 Respond ONLY with valid JSON array, no other text:
 [
-  {"coin": "BTC", "score": 0.8, "confidence": 0.9, "reasoning": "Spot ETF approval rumored by SEC"},
-  {"coin": "ETH", "score": -0.3, "confidence": 0.6, "reasoning": "Large ETH transfer to exchange signals sell pressure"}
+  {"coin": "${targetCoin}", "score": 0.8, "confidence": 0.9, "reasoning": "Relevant signal for ${targetCoin}"}
 ]
 
-If no coins have meaningful signals, return: []`;
+If the target coin has no meaningful signal, return: []`;
 
     const [primaryScores, secondaryScores] = await Promise.all([
       this._analyzeWithModel(prompt, this.primaryModel),
       this._analyzeWithModel(prompt, this.secondaryModel),
     ]);
 
-    return this._mergeModelScores(primaryScores, secondaryScores);
+    return this._mergeCoinScore(targetCoin, primaryScores, secondaryScores);
   }
 
   async _analyzeWithModel(prompt, model, attemptedModels = new Set()) {
@@ -128,47 +128,24 @@ If no coins have meaningful signals, return: []`;
     }
   }
 
-  _mergeModelScores(primaryScores, secondaryScores) {
-    const primaryByCoin = new Map(primaryScores.map(s => [s.coin, s]));
-    const secondaryByCoin = new Map(secondaryScores.map(s => [s.coin, s]));
-    const merged = [];
-    let missingSecond = 0;
-    let signMismatch = 0;
-    let lowConfidence = 0;
+  _mergeCoinScore(coin, primaryScores, secondaryScores) {
+    const primary = primaryScores.find(s => s.coin === coin);
+    const secondary = secondaryScores.find(s => s.coin === coin);
+    if (!primary || !secondary) return null;
 
-    for (const [coin, primary] of primaryByCoin.entries()) {
-      const secondary = secondaryByCoin.get(coin);
-      if (!secondary) {
-        missingSecond++;
-        continue;
-      }
+    const primarySign = Math.sign(primary.score);
+    const secondarySign = Math.sign(secondary.score);
+    if (primarySign === 0 || secondarySign === 0 || primarySign !== secondarySign) return null;
 
-      const primarySign = Math.sign(primary.score);
-      const secondarySign = Math.sign(secondary.score);
-      if (primarySign === 0 || secondarySign === 0 || primarySign !== secondarySign) {
-        signMismatch++;
-        continue;
-      }
+    const mergedConfidence = (primary.confidence + secondary.confidence) / 2;
+    if (mergedConfidence < MIN_MERGED_CONFIDENCE) return null;
 
-      const mergedConfidence = (primary.confidence + secondary.confidence) / 2;
-      if (mergedConfidence < MIN_MERGED_CONFIDENCE) {
-        lowConfidence++;
-        continue;
-      }
-
-      merged.push({
-        coin,
-        score: (primary.score + secondary.score) / 2,
-        confidence: mergedConfidence,
-        reasoning: `${this.primaryModel}: ${primary.reasoning} | ${this.secondaryModel}: ${secondary.reasoning}`,
-      });
-    }
-
-    console.log(
-      `[Sentiment] Agreement stats: accepted=${merged.length} missing_second=${missingSecond} sign_mismatch=${signMismatch} low_conf=${lowConfidence}`
-    );
-
-    return merged;
+    return {
+      coin,
+      score: (primary.score + secondary.score) / 2,
+      confidence: mergedConfidence,
+      reasoning: `${this.primaryModel}: ${primary.reasoning} | ${this.secondaryModel}: ${secondary.reasoning}`,
+    };
   }
 
   async _requestAndParse(prompt, model) {
@@ -218,5 +195,28 @@ If no coins have meaningful signals, return: []`;
     if (model === this.primaryModel) return this.secondaryModel;
     if (model === this.secondaryModel) return this.primaryModel;
     return null;
+  }
+
+  _buildCoinBatches(articles) {
+    const coinToArticles = {};
+    for (const article of articles) {
+      const coins = Array.isArray(article.coins) ? article.coins : [];
+      for (const coin of coins) {
+        if (!SUPPORTED_COINS.includes(coin)) continue;
+        if (!coinToArticles[coin]) coinToArticles[coin] = [];
+        coinToArticles[coin].push(article);
+      }
+    }
+
+    const batches = [];
+    for (const [coin, coinArticles] of Object.entries(coinToArticles)) {
+      for (let i = 0; i < coinArticles.length; i += BATCH_SIZE) {
+        batches.push({
+          coin,
+          articles: coinArticles.slice(i, i + BATCH_SIZE),
+        });
+      }
+    }
+    return batches;
   }
 }

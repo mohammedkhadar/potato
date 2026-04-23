@@ -95,8 +95,25 @@ export class AlpacaBroker {
    * @param {string} coin  e.g. 'BTC'
    * @param {number} usdAmount  dollar amount to spend
    */
-  async buy(coin, usdAmount) {
+  async buy(coin, usdAmount, { takeProfitPct, stopLossPct } = {}) {
     const symbol = toAlpacaSymbol(coin);
+
+    if (
+      typeof takeProfitPct === 'number' &&
+      typeof stopLossPct === 'number' &&
+      takeProfitPct > 0 &&
+      stopLossPct > 0
+    ) {
+      try {
+        return await this._buyWithBracket(coin, usdAmount, takeProfitPct, stopLossPct);
+      } catch (err) {
+        console.warn(
+          `[Broker] Bracket buy failed for ${coin}, falling back to market buy:`,
+          err.response?.data?.message || err.message
+        );
+      }
+    }
+
     const body = {
       symbol,
       notional:   usdAmount.toFixed(2),   // USD notional = fractional friendly
@@ -106,6 +123,35 @@ export class AlpacaBroker {
     };
     const { data } = await axios.post(`${this.base}/v2/orders`, body, { headers: this.headers });
     console.log(`[Broker] BUY  ${coin} $${usdAmount} → order ${data.id}`);
+    return data;
+  }
+
+  async _buyWithBracket(coin, usdAmount, takeProfitPct, stopLossPct) {
+    const symbol = toAlpacaSymbol(coin);
+    const price = await this.getPrice(coin);
+    const qty = (usdAmount / price).toFixed(8);
+    const takeProfitPrice = (price * (1 + takeProfitPct / 100)).toFixed(2);
+    const stopLossPrice = (price * (1 - stopLossPct / 100)).toFixed(2);
+
+    const body = {
+      symbol,
+      qty,
+      side: 'buy',
+      type: 'market',
+      time_in_force: 'gtc',
+      order_class: 'bracket',
+      take_profit: {
+        limit_price: takeProfitPrice,
+      },
+      stop_loss: {
+        stop_price: stopLossPrice,
+      },
+    };
+
+    const { data } = await axios.post(`${this.base}/v2/orders`, body, { headers: this.headers });
+    console.log(
+      `[Broker] BRACKET BUY ${coin} qty=${qty} tp=${takeProfitPrice} sl=${stopLossPrice} → order ${data.id}`
+    );
     return data;
   }
 

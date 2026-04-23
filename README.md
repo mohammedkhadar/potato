@@ -20,12 +20,13 @@ GitHub Actions (every 5 min)
         │
         ▼
   TradeEngine
+  ├── ENTRY: market bracket order with TP/SL on Alpaca (fallback to market buy)
   ├── EXIT: take profit (+1.5%) / stop loss (-0.8%) / 15-min expiry / sentiment flip
-  └── ENTRY: score ≥ 0.45, max 3 positions, 10% buying power each
+  └── ENTRY: score ≥ 0.60, max 3 positions, 5% buying power (max $100) each
         │
         ▼
   AlpacaBroker (0% commission crypto)
-  └── Market orders via REST API
+  └── Bracket + market orders via REST API
 ```
 
 ---
@@ -81,12 +82,13 @@ To trigger manually: **Actions → Crypto Trading Bot → Run workflow**
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Entry threshold | 0.45 | Strong, high-confidence signal only |
+| Entry threshold | 0.60 | More selective signals, reduced noise entries |
 | Take profit | +1.5% | Realistic 15-min crypto move |
 | Stop loss | -0.8% | Asymmetric risk/reward |
 | Max hold | 15 min | News alpha decays quickly |
 | Max positions | 3 | Diversified but focused |
-| Position size | 10% buying power (max $200) | Risk management |
+| Position size | 5% buying power (max $100) | Lower per-trade risk while tuning |
+| Cooldown after stop-loss | 30 min per coin | Prevents immediate re-entry churn |
 
 ### Exit triggers (in priority order)
 1. **Take profit** — unrealised P&L ≥ +1.5%
@@ -99,6 +101,8 @@ To trigger manually: **Actions → Crypto Trading Bot → Run workflow**
 ## State Management
 
 GitHub Actions runners are stateless, so open position metadata (entry time, entry price) is persisted in `/tmp/bot_state.json` and cached between runs using `actions/cache`. This allows the bot to track how long it has held each position and enforce the 15-minute exit rule across multiple workflow runs.
+
+For entries, the bot now attempts an Alpaca bracket order (`order_class=bracket`) to attach broker-side take-profit and stop-loss immediately after fill. If bracket placement is rejected, it falls back to a standard market buy and keeps software-managed exits.
 
 ---
 
