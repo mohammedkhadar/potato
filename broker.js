@@ -34,6 +34,9 @@ export class AlpacaBroker {
       'APCA-API-SECRET-KEY': apiSecret,
       'Content-Type':        'application/json',
     };
+    // Alpaca crypto on this route rejects advanced order_class (bracket/otoco),
+    // so default to direct market orders and keep TP/SL in engine logic.
+    this.bracketSupportedForCrypto = false;
     console.log(`[Broker] Alpaca ${paper ? 'PAPER' : 'LIVE'} trading — 0% commission`);
   }
 
@@ -99,6 +102,7 @@ export class AlpacaBroker {
     const symbol = toAlpacaSymbol(coin);
 
     if (
+      this.bracketSupportedForCrypto &&
       typeof takeProfitPct === 'number' &&
       typeof stopLossPct === 'number' &&
       takeProfitPct > 0 &&
@@ -107,9 +111,14 @@ export class AlpacaBroker {
       try {
         return await this._buyWithBracket(coin, usdAmount, takeProfitPct, stopLossPct);
       } catch (err) {
+        const errMsg = err.response?.data?.message || err.message || '';
+        if (/crypto orders not allowed for advanced order_class/i.test(errMsg)) {
+          this.bracketSupportedForCrypto = false;
+          console.warn('[Broker] Disabling bracket attempts for crypto in this run (unsupported order_class)');
+        }
         console.warn(
           `[Broker] Bracket buy failed for ${coin}, falling back to market buy:`,
-          err.response?.data?.message || err.message
+          errMsg
         );
       }
     }
