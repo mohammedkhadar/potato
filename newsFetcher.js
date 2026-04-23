@@ -10,6 +10,13 @@
 
 import axios from 'axios';
 
+const COMMON_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (compatible; CryptoNewsBot/1.0; +https://github.com/)',
+  Accept: 'application/rss+xml, application/xml, text/xml, application/json;q=0.9, */*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'no-cache',
+};
+
 const RSS_SOURCES = [
   {
     name: 'coindesk',
@@ -34,15 +41,28 @@ export const SUPPORTED_COINS = [
 
 export class NewsFetcher {
   async fetchAll() {
-    const results = await Promise.allSettled([
-      ...RSS_SOURCES.map(s => this._fetchRSS(s)),
-      ...REDDIT_SOURCES.map(s => this._fetchReddit(s)),
-    ]);
+    const tasks = [
+      ...RSS_SOURCES.map(source => ({
+        source: source.name,
+        run: () => this._fetchRSS(source),
+      })),
+      ...REDDIT_SOURCES.map(source => ({
+        source: source.name,
+        run: () => this._fetchReddit(source),
+      })),
+    ];
+    const results = await Promise.allSettled(tasks.map(t => t.run()));
 
     const articles = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled') articles.push(...r.value);
-      else console.warn('[NewsFetcher] source failed:', r.reason?.message);
+    for (const [idx, r] of results.entries()) {
+      const source = tasks[idx].source;
+      if (r.status === 'fulfilled') {
+        articles.push(...r.value);
+      } else {
+        const status = r.reason?.response?.status;
+        const suffix = status ? ` (HTTP ${status})` : '';
+        console.warn(`[NewsFetcher] source failed (${source})${suffix}:`, r.reason?.message);
+      }
     }
 
     // Deduplicate by title similarity and sort newest first
@@ -62,7 +82,7 @@ export class NewsFetcher {
   async _fetchRSS({ name, url }) {
     const { data } = await axios.get(url, {
       timeout: 10000,
-      headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
+      headers: COMMON_HEADERS,
     });
 
     // Minimal XML parse without external deps
@@ -92,7 +112,7 @@ export class NewsFetcher {
     const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=25`;
     const { data } = await axios.get(url, {
       timeout: 10000,
-      headers: { 'User-Agent': 'CryptoNewsBot/1.0' },
+      headers: COMMON_HEADERS,
     });
 
     return (data.data?.children || [])

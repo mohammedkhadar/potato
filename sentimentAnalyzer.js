@@ -149,34 +149,26 @@ If no coins have meaningful signals, return: []`;
   }
 
   _mergeModelScores(primaryScores, secondaryScores) {
-    const merged = new Map();
-    const all = [
-      ...primaryScores.map(s => ({ ...s, sourceModel: this.primaryModel })),
-      ...secondaryScores.map(s => ({ ...s, sourceModel: this.secondaryModel })),
-    ];
+    const primaryByCoin = new Map(primaryScores.map(s => [s.coin, s]));
+    const secondaryByCoin = new Map(secondaryScores.map(s => [s.coin, s]));
+    const merged = [];
 
-    for (const item of all) {
-      if (!merged.has(item.coin)) {
-        merged.set(item.coin, {
-          coin: item.coin,
-          scoreTotal: 0,
-          confidenceTotal: 0,
-          count: 0,
-          reasons: [],
-        });
-      }
-      const entry = merged.get(item.coin);
-      entry.scoreTotal += item.score;
-      entry.confidenceTotal += item.confidence;
-      entry.count += 1;
-      entry.reasons.push(`${item.sourceModel}: ${item.reasoning}`);
+    for (const [coin, primary] of primaryByCoin.entries()) {
+      const secondary = secondaryByCoin.get(coin);
+      if (!secondary) continue;
+
+      const primarySign = Math.sign(primary.score);
+      const secondarySign = Math.sign(secondary.score);
+      if (primarySign === 0 || secondarySign === 0 || primarySign !== secondarySign) continue;
+
+      merged.push({
+        coin,
+        score: (primary.score + secondary.score) / 2,
+        confidence: (primary.confidence + secondary.confidence) / 2,
+        reasoning: `${this.primaryModel}: ${primary.reasoning} | ${this.secondaryModel}: ${secondary.reasoning}`,
+      });
     }
 
-    return [...merged.values()].map(entry => ({
-      coin: entry.coin,
-      score: entry.scoreTotal / entry.count,
-      confidence: entry.confidenceTotal / entry.count,
-      reasoning: entry.reasons.slice(0, 2).join(' | '),
-    }));
+    return merged;
   }
 }

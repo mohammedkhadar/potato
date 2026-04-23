@@ -21,14 +21,15 @@ const STATE_FILE = '/tmp/bot_state.json';
 
 // ── Strategy parameters ───────────────────────────────────────────────────────
 const CONFIG = {
-  ENTRY_THRESHOLD:  0.45,   // minimum sentiment score to enter
+  ENTRY_THRESHOLD:  0.60,   // stricter threshold to reduce noisy entries
   TAKE_PROFIT_PCT:  1.5,    // close at +1.5% gain
   STOP_LOSS_PCT:    0.8,    // close at -0.8% loss
   MAX_HOLD_MINUTES: 15,     // force-close after 15 min regardless
-  MAX_POSITION_USD: 200,    // max $ per position
-  POSITION_PCT:     0.10,   // use 10% of available buying power per trade
+  MAX_POSITION_USD: 100,    // lower max risk per position while tuning
+  POSITION_PCT:     0.05,   // use 5% of available buying power per trade
   MIN_POSITION_USD: 10,     // minimum trade size (Alpaca minimum)
   MAX_OPEN_POSITIONS: 3,    // never hold more than 3 coins simultaneously
+  COOLDOWN_AFTER_STOP_MINUTES: 30, // wait after stop-loss before re-entry
 };
 
 export class TradeEngine {
@@ -99,6 +100,14 @@ export class TradeEngine {
         console.log(`[Engine] → CLOSING ${coin}: ${reason}`);
         await this.broker.closePosition(coin);
         delete this.state.entries[coin];
+        if (reason.startsWith('STOP LOSS')) {
+          const cooldownUntil = Date.now() + CONFIG.COOLDOWN_AFTER_STOP_MINUTES * 60 * 1000;
+          this.state.cooldowns = this.state.cooldowns || {};
+          this.state.cooldowns[coin] = cooldownUntil;
+          console.log(
+            `[Engine] ${coin} cooldown active until ${new Date(cooldownUntil).toISOString()} after stop-loss`
+          );
+        }
         this._logTrade({ action: 'SELL', coin, reason, pl: unrealizedPLPct });
       } else {
         console.log(`[Engine] → HOLDING ${coin}`);
@@ -108,12 +117,21 @@ export class TradeEngine {
 
   // ── Entries ───────────────────────────────────────────────────────────────────
   async _evaluateEntries(sentimentResults, account, currentPositions) {
+    this._pruneCooldowns();
     const heldCoins = new Set(currentPositions.map(p => p.coin));
     const slotsAvailable = CONFIG.MAX_OPEN_POSITIONS - currentPositions.length;
+    const cooldowns = this.state.cooldowns || {};
+
+    for (const [coin, untilTs] of Object.entries(cooldowns)) {
+      const minsLeft = Math.max(0, (untilTs - Date.now()) / 60000);
+      if (minsLeft > 0) {
+        console.log(`[Engine] ${coin} is in cooldown for ${minsLeft.toFixed(1)} more minutes`);
+      }
+    }
 
     // Filter to strong bullish signals on coins we don't already hold
     const opportunities = sentimentResults
-      .filter(r => r.score >= CONFIG.ENTRY_THRESHOLD && !heldCoins.has(r.coin))
+      .filter(r => r.score >= CONFIG.ENTRY_THRESHOLD && !heldCoins.has(r.coin) && !cooldowns[r.coin])
       .slice(0, slotsAvailable);
 
     if (opportunities.length === 0) {
@@ -163,7 +181,7 @@ export class TradeEngine {
         return JSON.parse(readFileSync(STATE_FILE, 'utf8'));
       }
     } catch {}
-    return { entries: {}, trades: [] };
+    return { entries: {}, trades: [], cooldowns: {} };
   }
 
   _saveState() {
@@ -174,5 +192,13 @@ export class TradeEngine {
     const record = { ...trade, timestamp: new Date().toISOString() };
     this.state.trades = [record, ...(this.state.trades || [])].slice(0, 100);
     console.log('[Engine] Trade logged:', JSON.stringify(record));
+  }
+
+  _pruneCooldowns() {
+    const now = Date.now();
+    this.state.cooldowns = this.state.cooldowns || {};
+    for (const [coin, untilTs] of Object.entries(this.state.cooldowns)) {
+      if (now >= untilTs) delete this.state.cooldowns[coin];
+    }
   }
 }
