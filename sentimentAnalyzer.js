@@ -82,16 +82,18 @@ TARGET COIN: ${targetCoin}
 
 For the target coin only, provide:
 - A sentiment SCORE from -1.0 (very bearish) to +1.0 (very bullish), based only on evidence relevant to ${targetCoin}
-- A CONFIDENCE from 0.1 to 1.0 based on how clear and credible the signal is
-- Brief REASONING (max 20 words)
+- A CONFIDENCE from 0.1 to 1.0 that combines:
+  1) clarity/credibility of the signal, and
+  2) likelihood the move can realistically reach take-profit magnitude within the NEXT 5 MINUTES
+- Brief REASONING (max 20 words), explicitly mentioning 5-minute move potential when relevant
 
-Focus on signals that could drive price movement in the NEXT 15 MINUTES:
+Focus on signals that could drive price movement quickly (especially NEXT 5 MINUTES, and at most NEXT 15 MINUTES):
 - Breaking news, exchange listings, major partnerships, regulatory news
 - Whale activity, large liquidations, short squeezes
 - Hacks, exploits, project failures
 - Viral social momentum
 
-Ignore: vague speculation, old news, minor updates unlikely to move price
+Ignore: vague speculation, old news, minor updates unlikely to move price fast enough
 
 ARTICLES:
 ${articlesText}
