@@ -4,8 +4,6 @@
  * Sources chosen for coverage + free/public access:
  *  1. CoinDesk RSS     — authoritative crypto journalism, no auth needed
  *  2. CoinTelegraph RSS— second major outlet, no auth needed
- *  3. Reddit r/CryptoCurrency — community sentiment, public JSON API
- *  4. Reddit r/Bitcoin        — BTC-focused community signal
  */
 
 import axios from 'axios';
@@ -28,11 +26,6 @@ const RSS_SOURCES = [
   },
 ];
 
-const REDDIT_SOURCES = [
-  { name: 'reddit_crypto', subreddit: 'CryptoCurrency' },
-  { name: 'reddit_bitcoin', subreddit: 'Bitcoin' },
-];
-
 // Coins we are willing to trade (Alpaca supports these)
 export const SUPPORTED_COINS = [
   'BTC', 'ETH', 'SOL', 'AVAX', 'LINK',
@@ -45,10 +38,6 @@ export class NewsFetcher {
       ...RSS_SOURCES.map(source => ({
         source: source.name,
         run: () => this._fetchRSS(source),
-      })),
-      ...REDDIT_SOURCES.map(source => ({
-        source: source.name,
-        run: () => this._fetchReddit(source),
       })),
     ];
     const results = await Promise.allSettled(tasks.map(t => t.run()));
@@ -108,28 +97,6 @@ export class NewsFetcher {
         coins: this._extractCoins(title + ' ' + desc),
       };
     }).filter(a => a.title);
-  }
-
-  // ── Reddit ───────────────────────────────────────────────────────────────────
-  async _fetchReddit({ name, subreddit }) {
-    const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=25`;
-    const { data } = await axios.get(url, {
-      timeout: 10000,
-      headers: COMMON_HEADERS,
-    });
-
-    return (data.data?.children || [])
-      .filter(p => !p.data.stickied)
-      .map(p => ({
-        source: name,
-        title: p.data.title,
-        body: (p.data.selftext || '').slice(0, 500),
-        url: `https://reddit.com${p.data.permalink}`,
-        publishedAt: new Date(p.data.created_utc * 1000).toISOString(),
-        coins: this._extractCoins(p.data.title + ' ' + (p.data.selftext || '')),
-        score: p.data.score,
-        comments: p.data.num_comments,
-      }));
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -12,9 +12,7 @@ GitHub Actions (every 5 min)
         ▼
   NewsFetcher
   ├── CoinDesk RSS      (authoritative crypto journalism)
-  ├── CoinTelegraph RSS (major crypto outlet)
-  ├── Reddit r/CryptoCurrency (community sentiment)
-  └── Reddit r/Bitcoin  (BTC-focused signals)
+  └── CoinTelegraph RSS (major crypto outlet)
         │
         ▼
   SentimentAnalyzer (OpenRouter / 2x OSS models)

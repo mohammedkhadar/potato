@@ -2,7 +2,7 @@
  * Crypto News Trading Bot — Main Entry Point
  *
  * Execution flow:
- *  1. Fetch news from CoinDesk, CoinTelegraph, and Reddit
+ *  1. Fetch news from CoinDesk and CoinTelegraph
  *  2. Analyse sentiment with two OSS LLMs and average scores
  *  3. Exit any positions that hit take-profit / stop-loss / 15-min expiry
  *  4. Enter new positions on strong bullish signals
