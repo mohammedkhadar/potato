@@ -22,7 +22,7 @@ const ENDPOINTS = {
 
 // Alpaca uses symbol format "BTC/USD"
 const toAlpacaSymbol = coin => `${coin}/USD`;
-const fromAlpacaSymbol = symbol => symbol.replace('/USD', '');
+const fromAlpacaSymbol = symbol => symbol.replace(/\/?USD$/, '');
 
 export class AlpacaBroker {
   constructor({ apiKey, apiSecret, paper = true }) {
@@ -176,15 +176,32 @@ export class AlpacaBroker {
    * Close an entire position by coin
    */
   async closePosition(coin) {
-    const symbol = toAlpacaSymbol(coin);
+    const primarySymbol = coin.includes('/') ? coin : toAlpacaSymbol(fromAlpacaSymbol(coin));
+    const fallbackSymbol = primarySymbol.includes('/') ? primarySymbol.replace('/', '') : primarySymbol;
+
+    const tryClose = async (symbol) => axios.delete(
+      `${this.base}/v2/positions/${encodeURIComponent(symbol)}`,
+      { headers: this.headers }
+    );
+
     try {
-      const { data } = await axios.delete(
-        `${this.base}/v2/positions/${encodeURIComponent(symbol)}`,
-        { headers: this.headers }
-      );
-      console.log(`[Broker] CLOSED position ${coin}`);
+      const { data } = await tryClose(primarySymbol);
+      console.log(`[Broker] CLOSED position ${coin} via ${primarySymbol}`);
       return data;
     } catch (err) {
+      if (err.response?.status === 404 && fallbackSymbol !== primarySymbol) {
+        try {
+          const { data } = await tryClose(fallbackSymbol);
+          console.log(`[Broker] CLOSED position ${coin} via ${fallbackSymbol}`);
+          return data;
+        } catch (fallbackErr) {
+          if (fallbackErr.response?.status === 404) {
+            console.log(`[Broker] No open position for ${coin}`);
+            return null;
+          }
+          throw fallbackErr;
+        }
+      }
       if (err.response?.status === 404) {
         console.log(`[Broker] No open position for ${coin}`);
         return null;

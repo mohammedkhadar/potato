@@ -79,10 +79,14 @@ export class TradeEngine {
     for (const pos of positions) {
       const { coin, unrealizedPLPct, qty } = pos;
       const entry = this.state.entries[coin];
-      const ageMinutes = entry ? (now - entry.timestamp) / 60000 : 999;
+      const ageMinutes = entry ? (now - entry.timestamp) / 60000 : null;
       const currentSentiment = sentimentMap[coin] ?? 0;
+      const ageDisplay = ageMinutes === null ? 'unknown' : `${ageMinutes.toFixed(1)}min`;
 
-      console.log(`[Engine] ${coin}: P&L=${unrealizedPLPct.toFixed(2)}% | Age=${ageMinutes.toFixed(1)}min | Sentiment=${currentSentiment.toFixed(2)}`);
+      console.log(`[Engine] ${coin}: P&L=${unrealizedPLPct.toFixed(2)}% | Age=${ageDisplay} | Sentiment=${currentSentiment.toFixed(2)}`);
+      if (!entry) {
+        console.warn(`[Engine] ${coin}: entry metadata missing; will force close to avoid unmanaged risk`);
+      }
 
       let reason = null;
 
@@ -90,8 +94,10 @@ export class TradeEngine {
         reason = `TAKE PROFIT (+${unrealizedPLPct.toFixed(2)}%)`;
       } else if (unrealizedPLPct <= -CONFIG.STOP_LOSS_PCT) {
         reason = `STOP LOSS (${unrealizedPLPct.toFixed(2)}%)`;
-      } else if (ageMinutes >= CONFIG.MAX_HOLD_MINUTES) {
+      } else if (ageMinutes !== null && ageMinutes >= CONFIG.MAX_HOLD_MINUTES) {
         reason = `15-MIN EXPIRY (${ageMinutes.toFixed(1)} min held)`;
+      } else if (ageMinutes === null) {
+        reason = 'MISSING ENTRY METADATA (forced risk close)';
       } else if (currentSentiment < -0.3) {
         reason = `SENTIMENT FLIP (${currentSentiment.toFixed(2)})`;
       }
