@@ -31,6 +31,7 @@ const CONFIG = {
   MAX_OPEN_POSITIONS: 3,    // never hold more than 3 coins simultaneously
   COOLDOWN_AFTER_STOP_MINUTES: 30, // wait after stop-loss before re-entry
   MAX_ENTRY_SLIPPAGE_PCT: 0.20, // skip if estimated entry slippage is too high
+  MIN_MOMENTUM_30S_PCT: 0.0, // require non-negative momentum in last 30s
 };
 
 export class TradeEngine {
@@ -161,6 +162,19 @@ export class TradeEngine {
       console.log(`[Engine]   Reason: ${opp.reasoning}`);
 
       try {
+        try {
+          const momentum30sPct = await this.broker.getMomentum30sPct(opp.coin);
+          console.log(`[Engine] ${opp.coin} momentum(30s)=${momentum30sPct.toFixed(3)}%`);
+          if (momentum30sPct <= CONFIG.MIN_MOMENTUM_30S_PCT) {
+            console.log(
+              `[Engine] Skipping ${opp.coin}: 30s momentum ${momentum30sPct.toFixed(3)}% <= ${CONFIG.MIN_MOMENTUM_30S_PCT.toFixed(3)}%`
+            );
+            continue;
+          }
+        } catch (momentumErr) {
+          console.warn(`[Engine] 30s momentum unavailable for ${opp.coin}, continuing: ${momentumErr.message}`);
+        }
+
         try {
           const estSlippagePct = await this.broker.estimateEntrySlippagePct(opp.coin);
           console.log(`[Engine] ${opp.coin} estimated entry slippage=${estSlippagePct.toFixed(3)}%`);

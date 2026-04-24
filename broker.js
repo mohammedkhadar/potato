@@ -119,6 +119,31 @@ export class AlpacaBroker {
     return ((ask - mid) / mid) * 100;
   }
 
+  /**
+   * Compute momentum over the last 30 seconds from recent trades.
+   * Returns percentage change between earliest and latest trade in window.
+   */
+  async getMomentum30sPct(coin) {
+    const symbol = toAlpacaSymbol(coin);
+    const end = new Date();
+    const start = new Date(end.getTime() - 30_000);
+    const url = `${ENDPOINTS.data}/v1beta3/crypto/us/trades?symbols=${encodeURIComponent(symbol)}&start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}&limit=1000`;
+    const { data } = await axios.get(url, { headers: this.headers });
+
+    const trades = data?.trades?.[symbol];
+    if (!Array.isArray(trades) || trades.length < 2) {
+      throw new Error(`Insufficient trades for 30s momentum (${symbol})`);
+    }
+
+    const first = parseFloat(trades[0]?.p);
+    const last = parseFloat(trades[trades.length - 1]?.p);
+    if (!Number.isFinite(first) || !Number.isFinite(last) || first <= 0) {
+      throw new Error(`Invalid trade prices for 30s momentum (${symbol})`);
+    }
+
+    return ((last - first) / first) * 100;
+  }
+
   // ── Orders ────────────────────────────────────────────────────────────────────
   /**
    * Place a market buy order
