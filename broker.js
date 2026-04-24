@@ -92,6 +92,33 @@ export class AlpacaBroker {
     return prices;
   }
 
+  async getQuote(coin) {
+    const symbol = toAlpacaSymbol(coin);
+    const { data } = await axios.get(
+      `${ENDPOINTS.data}/v1beta3/crypto/us/latest/quotes?symbols=${encodeURIComponent(symbol)}`,
+      { headers: this.headers }
+    );
+    const quote = data.quotes?.[symbol];
+    if (!quote) throw new Error(`No quote data for ${symbol}`);
+    return {
+      bid: parseFloat(quote.bp),
+      ask: parseFloat(quote.ap),
+    };
+  }
+
+  /**
+   * Estimate entry slippage as ask-side distance from mid price (percentage).
+   * For a market buy, this is a practical proxy for immediate execution drag.
+   */
+  async estimateEntrySlippagePct(coin) {
+    const { bid, ask } = await this.getQuote(coin);
+    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) {
+      throw new Error(`Invalid quote for ${coin}: bid=${bid} ask=${ask}`);
+    }
+    const mid = (bid + ask) / 2;
+    return ((ask - mid) / mid) * 100;
+  }
+
   // ── Orders ────────────────────────────────────────────────────────────────────
   /**
    * Place a market buy order

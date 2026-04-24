@@ -30,6 +30,7 @@ const CONFIG = {
   MIN_POSITION_USD: 10,     // minimum trade size (Alpaca minimum)
   MAX_OPEN_POSITIONS: 3,    // never hold more than 3 coins simultaneously
   COOLDOWN_AFTER_STOP_MINUTES: 30, // wait after stop-loss before re-entry
+  MAX_ENTRY_SLIPPAGE_PCT: 0.20, // skip if estimated entry slippage is too high
 };
 
 export class TradeEngine {
@@ -160,6 +161,19 @@ export class TradeEngine {
       console.log(`[Engine]   Reason: ${opp.reasoning}`);
 
       try {
+        try {
+          const estSlippagePct = await this.broker.estimateEntrySlippagePct(opp.coin);
+          console.log(`[Engine] ${opp.coin} estimated entry slippage=${estSlippagePct.toFixed(3)}%`);
+          if (estSlippagePct > CONFIG.MAX_ENTRY_SLIPPAGE_PCT) {
+            console.log(
+              `[Engine] Skipping ${opp.coin}: estimated slippage ${estSlippagePct.toFixed(3)}% > ${CONFIG.MAX_ENTRY_SLIPPAGE_PCT.toFixed(2)}%`
+            );
+            continue;
+          }
+        } catch (slippageErr) {
+          console.warn(`[Engine] Slippage estimate unavailable for ${opp.coin}, continuing: ${slippageErr.message}`);
+        }
+
         await this.broker.buy(opp.coin, positionUsd, {
           takeProfitPct: CONFIG.TAKE_PROFIT_PCT,
           stopLossPct: CONFIG.STOP_LOSS_PCT,
