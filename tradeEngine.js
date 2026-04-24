@@ -21,7 +21,7 @@ const STATE_FILE = '/tmp/bot_state.json';
 
 // ── Strategy parameters ───────────────────────────────────────────────────────
 const CONFIG = {
-  ENTRY_THRESHOLD:  0.60,   // stricter threshold to reduce noisy entries
+  ENTRY_THRESHOLD:  0.75,   // very selective threshold to reduce weak signals
   TAKE_PROFIT_PCT:  1.5,    // close at +1.5% gain
   STOP_LOSS_PCT:    0.8,    // close at -0.8% loss
   MAX_HOLD_MINUTES: 15,     // force-close after 15 min regardless
@@ -31,7 +31,7 @@ const CONFIG = {
   MAX_OPEN_POSITIONS: 3,    // never hold more than 3 coins simultaneously
   COOLDOWN_AFTER_STOP_MINUTES: 30, // wait after stop-loss before re-entry
   MAX_ENTRY_SLIPPAGE_PCT: 0.20, // skip if estimated entry slippage is too high
-  MIN_MOMENTUM_30S_PCT: 0.0, // require non-negative momentum in last 30s
+  MIN_MOMENTUM_30S_PCT: 0.10, // require clear positive momentum in last 30s
 };
 
 export class TradeEngine {

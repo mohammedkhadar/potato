@@ -1,9 +1,9 @@
 name: Crypto Trading Bot
 
 on:
-  # Run every 5 minutes — tight enough to catch 15-min windows
+  # Run every 2 minutes for faster short-horizon reaction
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/2 * * * *'
 
   # Allow manual trigger with option to use live trading
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
   trade:
     name: Run Trading Bot
     runs-on: ubuntu-latest
-    timeout-minutes: 4   # must finish before next 5-min run starts
+    timeout-minutes: 1   # should finish before next 2-min run starts
 
     steps:
       - name: Checkout
