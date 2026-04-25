@@ -21,17 +21,20 @@ const STATE_FILE = '/tmp/bot_state.json';
 
 // ── Strategy parameters ───────────────────────────────────────────────────────
 const CONFIG = {
-  ENTRY_THRESHOLD:  0.75,   // very selective threshold to reduce weak signals
-  TAKE_PROFIT_PCT:  1.5,    // close at +1.5% gain
-  STOP_LOSS_PCT:    0.8,    // close at -0.8% loss
-  MAX_HOLD_MINUTES: 15,     // force-close after 15 min regardless
-  MAX_POSITION_USD: 100,    // lower max risk per position while tuning
-  POSITION_PCT:     0.05,   // use 5% of available buying power per trade
+  ENTRY_THRESHOLD:  0.85,   // ultra-selective threshold for rare high-quality signals
+  TAKE_PROFIT_PCT:  0.6,    // take smaller profits more consistently
+  STOP_LOSS_PCT:    0.35,   // cut losers quickly
+  MAX_HOLD_MINUTES: 8,      // force-close when short-term edge decays
+  MAX_POSITION_USD: 50,     // small size while proving positive expectancy
+  POSITION_PCT:     0.01,   // use 1% of available buying power per trade
   MIN_POSITION_USD: 10,     // minimum trade size (Alpaca minimum)
-  MAX_OPEN_POSITIONS: 3,    // never hold more than 3 coins simultaneously
-  COOLDOWN_AFTER_STOP_MINUTES: 30, // wait after stop-loss before re-entry
-  MAX_ENTRY_SLIPPAGE_PCT: 0.20, // skip if estimated entry slippage is too high
-  MIN_MOMENTUM_30S_PCT: 0.10, // require clear positive momentum in last 30s
+  MAX_OPEN_POSITIONS: 1,    // one position at a time for slow accumulation
+  COOLDOWN_AFTER_STOP_MINUTES: 60, // wait after stop-loss before re-entry
+  MAX_ENTRY_SLIPPAGE_PCT: 0.05, // skip if spread/slippage eats too much edge
+  MIN_MOMENTUM_30S_PCT: 0.15, // require strong positive momentum in last 30s
+  MAX_DAILY_LOSS_USD: 20,    // stop new entries after daily loss limit
+  MAX_DAILY_LOSSES: 2,       // stop new entries after repeated losses
+  DAILY_PROFIT_TARGET_USD: 20, // stop new entries after slow-accumulation target
 };
 
 export class TradeEngine {
@@ -58,7 +61,10 @@ export class TradeEngine {
 
     // ── Step 2: Entry evaluation ──────────────────────────────────────────────
     const updatedPositions = await this.broker.getPositions();
-    if (updatedPositions.length < CONFIG.MAX_OPEN_POSITIONS) {
+    const dailyRisk = this._getDailyRiskSummary();
+    if (dailyRisk.blocked) {
+      console.log(`[Engine] Daily risk guard active: ${dailyRisk.reason}, skipping new entries`);
+    } else if (updatedPositions.length < CONFIG.MAX_OPEN_POSITIONS) {
       await this._evaluateEntries(sentimentResults, account, updatedPositions);
     } else {
       console.log(`[Engine] Max positions (${CONFIG.MAX_OPEN_POSITIONS}) reached, skipping entries`);
@@ -229,6 +235,38 @@ export class TradeEngine {
     const record = { ...trade, timestamp: new Date().toISOString() };
     this.state.trades = [record, ...(this.state.trades || [])].slice(0, 100);
     console.log('[Engine] Trade logged:', JSON.stringify(record));
+  }
+
+  _getDailyRiskSummary() {
+    const day = new Date().toISOString().slice(0, 10);
+    const todayTrades = (this.state.trades || []).filter(t => String(t.timestamp || '').startsWith(day));
+    const sells = todayTrades.filter(t => t.action === 'SELL');
+    const realizedPctSum = sells.reduce((sum, t) => sum + (Number(t.pl) || 0), 0);
+    const lossCount = sells.filter(t => (Number(t.pl) || 0) < 0).length;
+    const estimatedDailyPnlUsd = todayTrades.reduce((sum, t) => {
+      if (t.action !== 'SELL') return sum;
+      const entry = [...todayTrades].reverse().find(prev =>
+        prev.action === 'BUY' &&
+        prev.coin === t.coin &&
+        new Date(prev.timestamp) <= new Date(t.timestamp)
+      );
+      return sum + ((Number(entry?.usd) || 0) * (Number(t.pl) || 0)) / 100;
+    }, 0);
+
+    if (estimatedDailyPnlUsd <= -CONFIG.MAX_DAILY_LOSS_USD) {
+      return { blocked: true, reason: `estimated daily P&L $${estimatedDailyPnlUsd.toFixed(2)} <= -$${CONFIG.MAX_DAILY_LOSS_USD}` };
+    }
+    if (lossCount >= CONFIG.MAX_DAILY_LOSSES) {
+      return { blocked: true, reason: `${lossCount} losing exits today >= ${CONFIG.MAX_DAILY_LOSSES}` };
+    }
+    if (estimatedDailyPnlUsd >= CONFIG.DAILY_PROFIT_TARGET_USD) {
+      return { blocked: true, reason: `daily profit target reached ($${estimatedDailyPnlUsd.toFixed(2)})` };
+    }
+
+    console.log(
+      `[Engine] Daily risk: pnl_est=$${estimatedDailyPnlUsd.toFixed(2)} losses=${lossCount} realized_pct_sum=${realizedPctSum.toFixed(2)}%`
+    );
+    return { blocked: false, reason: null };
   }
 
   _pruneCooldowns() {
